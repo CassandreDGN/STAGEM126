@@ -1,4 +1,1 @@
-git init
-git add
-git commit 
-git status
+this readme file is a test while i'm learning how to use github
