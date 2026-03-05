@@ -5,6 +5,9 @@ from Bio import SeqIO
 import time
 from tqdm import tqdm
 import h5py
+import sys
+
+
 
 # Load model directly
 #@title Load encoder-part of ProtT5 in half-precision. { display-mode: "form" }
@@ -89,6 +92,7 @@ def get_embeddings( model, tokenizer, seqs, per_residue, per_protein,
     print("Time for generating embeddings: {:.1f}[m] ({:.3f}[s/protein])".format(
         passed_time/60, avg_time ))
     print('\n############# END #############')
+
     return results
 
 def extract_seq_FASTA(file):
@@ -107,15 +111,24 @@ def save_embeddings(emb_dict,out_path):
 
 
 
+if __name__ == "__main__":
+
+    if len(sys.argv) < 3:
+        print("Error: You must provide input and output paths.")
+        print("Usage: python3 script.py <input_fasta> <output_h5>")
+        sys.exit(1)        
+
+    fasta_input = sys.argv[1]
+    h5_output = sys.argv[2] 
+
+    model, tokenizer = get_T5_model()
+    PROTEOME = sys.argv[1]
+    # Added the path and the H5 extension
+    SAVE_F = sys.argv[2]
 
 
-model, tokenizer = get_T5_model()
-PROTEOME = "/home/cassandre/stage/Cassandre/Proteome/UniProt/UP000005640_9606.fa"
-# Added the path and the H5 extension
-SAVE_F = "/home/cassandre/stage/Cassandre/Embeddings/homosapiens_embedding_protT5_uniprot_proteinembeddings.h5"
-
-
-proteins  = extract_seq_FASTA(PROTEOME)
-res = get_embeddings(model, tokenizer, proteins , False, True,
+    proteins  = extract_seq_FASTA(PROTEOME)
+    res = get_embeddings(model, tokenizer, proteins , False, True,
                    max_residues=4000, max_seq_len=1000, max_batch=100 )
-save_embeddings(res['protein_embs'], SAVE_F)
+    save_embeddings(res['protein_embs'], SAVE_F)
+
