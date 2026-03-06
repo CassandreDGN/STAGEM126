@@ -1,3 +1,7 @@
+!/home/cassandre/.conda/envs/LPM_2
+SBATCH --job-name=protT5_embedding
+#SBATCH --output=/home/cassandre/stage/Cassandre/slurm_out/slurm-%J.out --error=/home/cassandre/stage/Cassandre/slurm_out/slurm-%J.err
+
 import re
 import torch
 from transformers import T5Tokenizer, T5EncoderModel
@@ -6,6 +10,7 @@ import time
 from tqdm import tqdm
 import h5py
 import sys
+
 
 
 
@@ -111,11 +116,10 @@ def save_embeddings(emb_dict,out_path):
 
 
 
-if __name__ == "__main__":
+if __name__ == "__main__":  #replace sys w:: arcparse
 
     if len(sys.argv) < 3:
-        print("Error: You must provide input and output paths.")
-        print("Usage: python3 script.py <input_fasta> <output_h5>")
+        print("Argv: <python> protT5_embedding.py <input_fasta> <output_h5>")
         sys.exit(1)        
 
     fasta_input = sys.argv[1]
@@ -123,7 +127,6 @@ if __name__ == "__main__":
 
     model, tokenizer = get_T5_model()
     PROTEOME = sys.argv[1]
-    # Added the path and the H5 extension
     SAVE_F = sys.argv[2]
 
 
@@ -132,3 +135,4 @@ if __name__ == "__main__":
                    max_residues=4000, max_seq_len=1000, max_batch=100 )
     save_embeddings(res['protein_embs'], SAVE_F)
 
+#/home/cassandre/.conda/envs/LPM_2/bin/python /home/cassandre/stage/Cassandre/Code/protT5_embedding.py input.fasta output.h5
