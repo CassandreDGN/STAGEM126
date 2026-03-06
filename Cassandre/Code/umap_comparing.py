@@ -8,6 +8,15 @@ from sklearn.preprocessing import StandardScaler
 import matplotlib.pyplot as plt
 import umap
 import sys
+import os 
+
+
+def extractname_frompath(organismpath) :
+    filename = os.path.basename(organismpath)
+    nomseul = os.path.splitext(filename)[0]
+    label= nomseul.split('_')[0]
+
+    return label
 
 def extracting_h5embeddings(file_path,IDorganism): 
 
@@ -26,8 +35,13 @@ def extracting_h5embeddings(file_path,IDorganism):
 
 if __name__ == "__main__":
 
+   
+   
     h5path_organism1 = sys.argv[1]
     h5path_organism2 = sys.argv[2] 
+
+    label1 = extractname_frompath(h5path_organism1)
+    label2 = extractname_frompath(h5path_organism2)
 
 
     emb1,id1,keys1 = extracting_h5embeddings(sys.argv[1],1)  #les variables dans l'ordre du return seront stockés dans les var avant le = !! c'est du génie on en apprend tous les jours damn
@@ -45,14 +59,17 @@ if __name__ == "__main__":
     reducer = umap.UMAP(n_neighbors=21, min_dist=0.1, metric='cosine', random_state=42)
     embedding = reducer.fit_transform(X_scaled)
 
+
+    
     plt.figure(figsize=(10, 8))
 
-    plt.scatter(embedding[y==1, 0], embedding[y==1, 1], s=0.1, c='blue', alpha=0.3, label='Yeast')
-    plt.scatter(embedding[y==2, 0], embedding[y==2, 1], s=0.1, c='red', alpha=0.3, label='Xenopus')
+    plt.scatter(embedding[y==1, 0], embedding[y==1, 1], s=0.1, c='blue', alpha=0.3, label=label1)
+    plt.scatter(embedding[y==2, 0], embedding[y==2, 1], s=0.1, c='red', alpha=0.3, label=label2)
+
 #add prot id ? plotly 3rd list w/ IDs or dataframe before plotting
 
     plt.legend()
-    plt.savefig('/home/cassandre/stage/Cassandre/UMAPComparisonFig/comparison_map_YeastXenopusV1.png')
+    plt.savefig(f"/home/cassandre/stage/Cassandre/UMAPComparisonFig/comparison_{label1}_{label2}.png")
 
 
 
