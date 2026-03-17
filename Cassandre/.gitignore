@@ -1,2 +1,10 @@
 Proteome/
 Embeddings/
+UMAPComparisonFig/
+.vscode/
+slurm_out/
+*.png
+
+DISTANCE_DATAFRAME/
+panthr_text/
+Code/tests/

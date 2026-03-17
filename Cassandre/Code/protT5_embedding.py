@@ -1,6 +1,8 @@
-!/home/cassandre/.conda/envs/LPM_2
-SBATCH --job-name=protT5_embedding
+#!/home/cassandre/.conda/envs/LPM_2/bin/python
+#SBATCH --job-name=protT5_embedding
 #SBATCH --output=/home/cassandre/stage/Cassandre/slurm_out/slurm-%J.out --error=/home/cassandre/stage/Cassandre/slurm_out/slurm-%J.err
+
+#this code is used to generate embeddings based on a fasta file
 
 import re
 import torch
@@ -9,7 +11,7 @@ from Bio import SeqIO
 import time
 from tqdm import tqdm
 import h5py
-import sys
+import argparse
 
 
 
@@ -31,7 +33,7 @@ def get_T5_model():
 #@title Generate embeddings. { display-mode: "form" }
 # Generate embeddings via batch-processing
 # per_residue indicates that embeddings for each residue in a protein should be returned.
-# per_protein indicates that embeddings for a whole protein should be returned (average-pooling)
+# per_protein indicates that embeddings for a whole protein should be returned (max-pooling)
 # max_residues gives the upper limit of residues within one batch
 # max_seq_len gives the upper sequences length for applying batch-processing
 # max_batch gives the upper number of sequences per batch
@@ -80,12 +82,12 @@ def get_embeddings( model, tokenizer, seqs, per_residue, per_protein,
                 emb = embedding_repr.last_hidden_state[batch_idx,:s_len]
                 if per_residue: # store per-residue embeddings (Lx1024)
                     results["residue_embs"][ identifier ] = emb.detach().cpu().numpy().squeeze()
-                if per_protein: # apply average-pooling to derive per-protein embeddings (1024-d)
+                if per_protein: # apply max-pooling to derive per-protein embeddings (1024-d)
                     if use_idctq:
                         protein_emb = idct_quant_prost(emb.detach().cpu().numpy().squeeze())
                         results["protein_embs"][identifier]  = protein_emb
                     else:
-                        protein_emb = emb.mean(dim=0)
+                        protein_emb = emb.max(dim=0).values
                         results["protein_embs"][identifier] = protein_emb.detach().cpu().numpy().squeeze()
 
 
@@ -118,16 +120,20 @@ def save_embeddings(emb_dict,out_path):
 
 if __name__ == "__main__":  #replace sys w:: arcparse
 
-    if len(sys.argv) < 3:
-        print("Argv: <python> protT5_embedding.py <input_fasta> <output_h5>")
-        sys.exit(1)        
 
-    fasta_input = sys.argv[1]
-    h5_output = sys.argv[2] 
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument("fastainput", help="Chemin du fichier fasta")
+    parser.add_argument("h5output", help="Chemin de l'output H5")
+
+    args = parser.parse_args()        
+
+    fasta_input = args.fastainput
+    h5_output = args.h5output 
 
     model, tokenizer = get_T5_model()
-    PROTEOME = sys.argv[1]
-    SAVE_F = sys.argv[2]
+    PROTEOME = fasta_input
+    SAVE_F = h5_output
 
 
     proteins  = extract_seq_FASTA(PROTEOME)
@@ -136,3 +142,6 @@ if __name__ == "__main__":  #replace sys w:: arcparse
     save_embeddings(res['protein_embs'], SAVE_F)
 
 #/home/cassandre/.conda/envs/LPM_2/bin/python /home/cassandre/stage/Cassandre/Code/protT5_embedding.py input.fasta output.h5
+
+# sbatch -p gpu --gres=gpu:1 --wrap="/home/cassandre/.conda/envs/LPM_2/bin/python /home/cassandre/stage/Cassandre/Code/protT5_embedding.py input.fasta output.h5"
+# sbatch -p gpu --gres=gpu:1 path

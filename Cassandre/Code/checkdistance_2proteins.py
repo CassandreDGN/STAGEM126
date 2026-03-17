@@ -3,6 +3,8 @@
 #SBATCH --output=/home/cassandre/stage/Cassandre/slurm_out/slurm-%J.out
 #SBATCH --error=/home/cassandre/stage/Cassandre/slurm_out/slurm-%J.err
 
+#this code was made to check the distance between protein using scipy
+
 from scipy.spatial import distance
 import numpy as np
 import h5py

@@ -2,6 +2,7 @@
 #SBATCH --job-name=autoPLOTLY_comparing
 #SBATCH --output=/home/cassandre/stage/Cassandre/slurm_out/slurm-%J.out --error=/home/cassandre/stage/Cassandre/slurm_out/slurm-%J.err
 
+#this makes one umap ploly graph of ur file VS all file in folder 
 import argparse
 import os
 
