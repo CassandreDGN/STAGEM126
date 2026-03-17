@@ -87,6 +87,12 @@ def embed_protein(sequence: str):
     logits_output = client.logits(
         protein_tensor, LogitsConfig(sequence=True, return_embeddings=True) 
     )#donne les tokens au modèle, sequence = resultat pour chq aa, return_embeddings = on veut les embeddings 
+
+    full_embeddings = logits_output.embeddings
+
+    mean_embeddings = torch.mean(full_embeddings,dim=1) 
+
+
     return logits_output.embeddings #renvoie uniquement les embeddings
 
 
