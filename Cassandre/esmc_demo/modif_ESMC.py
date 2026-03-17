@@ -93,7 +93,7 @@ def embed_protein(sequence: str):
     mean_embeddings = torch.mean(full_embeddings,dim=1) 
 
 
-    return logits_output.embeddings #renvoie uniquement les embeddings
+    return mean_embeddings #renvoie uniquement les embeddings
 
 
 has_cuda = torch.cuda.is_available()
@@ -104,23 +104,33 @@ embeddings = {}
 for record in tqdm(SeqIO.parse(FASTA_FILE, "fasta")):  #loop for everyline in the fasta
     seq_id = record.id #recup de l'identifiants 
     sequence = str(record.seq) #transforme chaine d'AA en string
-    embeddings[seq_id] = embed_protein(sequence) #on passe la seq dans le modèle, qui renvoie une matrice représentant la protéine
+    res = embed_protein(sequence)
 
-embeddings_np = {k: v.cpu().numpy().squeeze() for k, v in embeddings.items()} #passe les données du GPU au CPU, convertir les tensors en numpy, nettoyage des dimensions inutiles
+    #embeddings[seq_id] = embed_protein(sequence) #on passe la seq dans le modèle, qui renvoie une matrice représentant la protéine
+    embeddings[seq_id] = res.flatten()
+
+#embeddings_np = {k: v.cpu().numpy().squeeze() for k, v in embeddings.items()} #passe les données du GPU au CPU, convertir les tensors en numpy, nettoyage des dimensions inutiles
+embeddings_np = {k: v.cpu().detach().numpy() for k, v in embeddings.items()} 
+#.cpu passe du gpu au cpu / .detach dit au script qu'on a plus de calcul à faire sur les données juste recup les valeurs brutes, convertit en numpy
 
 if len(embeddings_np) == 0:
     print("No embeddings were generated. Exiting.")
     sys.exit(1)
 
-arrays = np.vstack([arr for arr in embeddings_np.values()])  #prend tts les lignes des matrices et les mets en vertical stack = une matrice ou chaque ligne coorespond à un AA
-keys = np.repeat(
-    list(embeddings_np.keys()), [arr.shape[0] for arr in embeddings_np.values()]
-) #on prend la liste des ID, on compte le nb d'aa dans chq prot : repete le nom de la proteine autant de fois qu'elle a d'AA 
-position = np.concatenate([np.arange(arr.shape[0]) for arr in embeddings_np.values()]) #genere une suite de chiffre pour donner une position aux AA
+#arrays = np.vstack([arr for arr in embeddings_np.values()])  #prend tts les lignes des matrices et les mets en vertical stack = une matrice ou chaque ligne coorespond à un AA
 
-df = pd.DataFrame(arrays, columns=[str(i) for i in range(arrays.shape[1])]) #crée une df avec matrice des aa, nomme les colonnes 
-df.insert(0, "seq_id", keys) #ajoute noms des protéines
-df.insert(1, "position", position) #insère position de l'AA
+#keys = np.repeat(
+#    list(embeddings_np.keys()), [arr.shape[0] for arr in embeddings_np.values()]) on prend la liste des ID, on compte le nb d'aa dans chq prot : repete le nom de la proteine autant de fois qu'elle a d'AA 
+#position = np.concatenate([np.arange(arr.shape[0]) for arr in embeddings_np.values()]) #genere une suite de chiffre pour donner une position aux AA
+
+#df = pd.DataFrame(arrays, columns=[str(i) for i in range(arrays.shape[1])]) #crée une df avec matrice des aa, nomme les colonnes 
+#df.insert(0, "seq_id", keys) #ajoute noms des protéines
+#df.insert(1, "position", position) #insère position de l'AA
+
+df = pd.DataFrame.from_dict(embeddings_np, orient='index') #création DF, chaque clé devient une ligne
+df.insert(0, "seq_id", df.index) #on met l'id de sequence en première colonne 
+df.reset_index(drop=True, inplace=True) #nettoie la df en enlevant l'index, inplace permet de remplacer direct et pas créer une nouvelle df
+
 df.columns = df.columns.astype(str) #mets chaque colonne en str
 
 df.to_parquet(OUT_FILE, index=True) #turn dataframe to parquet
