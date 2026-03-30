@@ -87,7 +87,7 @@ def get_embeddings( model, tokenizer, seqs, per_residue, per_protein,
                         protein_emb = idct_quant_prost(emb.detach().cpu().numpy().squeeze())
                         results["protein_embs"][identifier]  = protein_emb
                     else:
-                        protein_emb = emb.max(dim=0).values
+                        protein_emb = emb.mean(dim=0)
                         results["protein_embs"][identifier] = protein_emb.detach().cpu().numpy().squeeze()
 
 

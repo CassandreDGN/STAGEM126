@@ -1,5 +1,10 @@
+#!/home/cassandre/.conda/envs/esmc/bin/python
+#SBATCH --job-name=esmc_embeddings
+#SBATCH --output=/home/cassandre/stage/Cassandre/slurm_out/slurm-%j.out
+#SBATCH --error=/home/cassandre/stage/Cassandre/slurm_out/slurm-%j.err
+
 """
-Embed protein sequences from a FASTA file using ESM models.
+Embed protein sequences from a FASTA file using ESM mods.
 
 This script reads protein sequences from a FASTA file, generates embeddings
 using a specified ESM (Evolutionary Scale Modeling) model, and saves the
@@ -39,6 +44,7 @@ from Bio import SeqIO
 from tqdm import tqdm
 import pandas as pd
 import numpy as np
+import h5py
 
 AVAILABLE_MODELS = ["esmc_300m", "esmc_600m"]
 
@@ -117,20 +123,26 @@ if len(embeddings_np) == 0:
     print("No embeddings were generated. Exiting.")
     sys.exit(1)
 
+
 #arrays = np.vstack([arr for arr in embeddings_np.values()])  #prend tts les lignes des matrices et les mets en vertical stack = une matrice ou chaque ligne coorespond à un AA
 
 #keys = np.repeat(
 #    list(embeddings_np.keys()), [arr.shape[0] for arr in embeddings_np.values()]) on prend la liste des ID, on compte le nb d'aa dans chq prot : repete le nom de la proteine autant de fois qu'elle a d'AA 
 #position = np.concatenate([np.arange(arr.shape[0]) for arr in embeddings_np.values()]) #genere une suite de chiffre pour donner une position aux AA
 
+H5_OUT = OUT_FILE.replace(".parquet", ".h5") if OUT_FILE.endswith(".parquet") else OUT_FILE + ".h5"
+with h5py.File(H5_OUT, "w") as hf:
+    for seq_id, emb in tqdm(embeddings_np.items(), desc="Saving"):
+        hf.create_dataset(seq_id, data=emb.astype(np.float32))
+
 #df = pd.DataFrame(arrays, columns=[str(i) for i in range(arrays.shape[1])]) #crée une df avec matrice des aa, nomme les colonnes 
 #df.insert(0, "seq_id", keys) #ajoute noms des protéines
 #df.insert(1, "position", position) #insère position de l'AA
 
-df = pd.DataFrame.from_dict(embeddings_np, orient='index') #création DF, chaque clé devient une ligne
-df.insert(0, "seq_id", df.index) #on met l'id de sequence en première colonne 
-df.reset_index(drop=True, inplace=True) #nettoie la df en enlevant l'index, inplace permet de remplacer direct et pas créer une nouvelle df
+#df = pd.DataFrame.from_dict(embeddings_np, orient='index') #création DF, chaque clé devient une ligne
+#df.insert(0, "seq_id", df.index) #on met l'id de sequence en première colonne 
+#df.reset_index(drop=True, inplace=True) #nettoie la df en enlevant l'index, inplace permet de remplacer direct et pas créer une nomuvelle df
 
-df.columns = df.columns.astype(str) #mets chaque colonne en str
+#df.columns = df.columns.astype(str) #mets chaque colonne en str
 
-df.to_parquet(OUT_FILE, index=True) #turn dataframe to parquet
+#df.to_parquet(OUT_FILE, index=True) #turn dataframe to parquet
