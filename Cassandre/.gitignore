@@ -1,10 +1,21 @@
+# Data & Large Files
 Proteome/
 Embeddings/
-UMAPComparisonFig/
-.vscode/
+*.h5
+*.obo
+*.gaf
+*.tsv
+*.csv
+
+# Results & Logs
+results/
+UMAP_ESMCEMBEDDINGS/
+ortho/
 slurm_out/
+*.html
 *.png
 
-DISTANCE_DATAFRAME/
-panthr_text/
-Code/tests/
+# Environment & Tools
+.vscode/
+.ipynb_checkpoints/
+__pycache__/

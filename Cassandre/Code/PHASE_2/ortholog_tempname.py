@@ -10,7 +10,6 @@ import pandas as pd
 import matplotlib.pyplot as plt 
 from scipy.spatial import distance
 from scipy.stats import mannwhitneyu
-import seaborn as sns
 import random
 import argparse
 import sys
@@ -18,22 +17,14 @@ import csv
 import gc
 
 
+def extractname_frompath(organismpath) :
+    filename = os.path.basename(organismpath)
+    nomseul = os.path.splitext(filename)[0]
+    label= nomseul.split('_')[0]
 
+    return label
 
-def get_ortho_list(chemin_fichier):
-    listA = set()
-    listB = set()
- 
-    with open(chemin_fichier,'r') as f:
-        for line in f:
-            parts = line.strip().split()
-            if len(parts) >=2:
-                listA.add(parts[0])
-                listB.add(parts[1])
-
-    return listA,listB
-
-def get_list_protein(chemin_fichier):
+def get_list_protein(chemin_fichier):  #get the protein list from the orthoinspector tsv file per organism
     listA = set()
     with open(chemin_fichier,'r') as f:
         for line in f:
@@ -41,18 +32,10 @@ def get_list_protein(chemin_fichier):
             if clean_id:
                 listA.add(clean_id)
     return listA
-def extract_fasta_access(fasta_path):
-    access = set()
-    with open(fasta_path, 'r') as f:
-        for line in f:
-            if line.startswith(">"):
-                parts = line.split('|')
-            
-                access.add(parts[1])
-    return access
 
 
-def embedding_setup(path):
+
+def embedding_setup(path):  #turn my embeddings in np.array in float32 for scipy compatibility
     ids = []
     embeddings = []
 
@@ -69,114 +52,30 @@ def embedding_setup(path):
     embed_array = np.array(embeddings).astype('float32')
     
     return ids, embed_array
-# have to use this function twice : once on query once on reference
-
-def index_search_distances(emb_query,emb_ref):
-  
-    
-    faiss.normalize_L2(emb_query)
-    faiss.normalize_L2(emb_ref) #need to normalize to do the Inner product (dot product for cosine similarity)
-
-    d = emb_ref.shape[1]  #tell faiss how many dimension we're working with
-    index = faiss.IndexFlatIP(d) #indexflat = no compression (avoid info loss)  / IP = inner or dot product = the cosine similarity
-    index.add(emb_ref) #store the information of organism2 to search through
-
-    distances, indices = index.search(emb_query, k=1)#look through organism2 to compare with organism1 prot and look for the closest neighbor only
-#distances store the distances, indices = the row number that match the indice of the list of ids !! genius congrats me :)
-
-    return distances,indices
 
 
-def extractname_frompath(organismpath) :
-    filename = os.path.basename(organismpath)
-    nomseul = os.path.splitext(filename)[0]
-    label= nomseul.split('_')[0]
-
-    return label
-
-
-def get_similarity_dataframe(id1, emb1, id2, emb2, label1, label2):
-  
-    #FAISS 
-    sim1_2, idx1_2 = index_search_distances(emb1, emb2)
-    sim2_1, idx2_1 = index_search_distances(emb2, emb1)
-    
-    neighbor_names_1_2 = [id2[i[0]] for i in idx1_2]
-    neighbor_names_2_1 = [id1[i[0]] for i in idx2_1]
-    
-    df1 = pd.DataFrame({
-        'proteinID': id1, 
-        'closest_Neighbor': neighbor_names_1_2, 
-        'similarité': sim1_2.flatten(), 
-        'species': label1
-    })
-    
-    df2 = pd.DataFrame({
-        'proteinID': id2, 
-        'closest_Neighbor': neighbor_names_2_1, 
-        'similarité': sim2_1.flatten(), 
-        'species': label2
-    })
-    
-    df_all = pd.concat([df1, df2], ignore_index=True)
-
-    return df_all.sort_values(by="similarité", ascending=False)
-
-def temporaryname(df, h_orthos, m_orthos, h_nonorthos, m_nonorthos, label1, label2):
-    
-    def get_status(row):
-        full_id = row['proteinID']
-        species = row['species']
-
-        pid = full_id.split('|')[1] if '|' in full_id else full_id
-
-        if species == label1:
-            if pid in h_orthos: return 'ortho'
-            if pid in h_nonorthos: return 'non_ortho'
-        elif species == label2:
-            if pid in m_orthos: return 'ortho'
-            if pid in m_nonorthos: return 'non_ortho'
-
-        return 'none'
-
-    df_new = df.copy()
-    df_new['status'] = df_new.apply(get_status,axis=1)
-
-    return df_new[df_new['status'] != 'none']
-
-def normalize_embs(emb):
+def normalize_embs(emb):  #normalize the embeddings because faiss used to do it so i guess its useful
     return emb / np.linalg.norm(emb, axis=1, keepdims=True)
 
-def get_indices(id_list,ortho_set,nonortho_set):
-    indice_ortho = []
-    indice_nonortho = []
-    for i, full_id in enumerate(id_list):
-        clean_id = full_id.split('|')[1] if '|' in full_id else full_id
 
-        if clean_id in ortho_set:
-            indice_ortho.append(i)
-        elif clean_id in nonortho_set:
-            indice_nonortho.append(i)
-    return indice_ortho,indice_nonortho
-
-def clean_id(long_id):
+def clean_id(long_id):  #clean the fasta header so i only keep the protein ID
     if '|' in long_id:
         return long_id.split('|')[1]
     return long_id
 
-def get_orthology_results(matrix, h_map, y_map, paires, inv_h, inv_m):
+def get_orthology_results(matrix, h_map, y_map, paires, inv_h, inv_m):  #split the protein based on their orthology relationship types 
     raw_results = {'All': [], 'OtO': [], 'OtM': [], 'MtO': [], 'MtM': []}
 
     for h_id, m_id in paires:
         if h_id in h_map and m_id in y_map:
-            dist = matrix[h_map[h_id], y_map[m_id]]
-            rank = (matrix[h_map[h_id], :] < dist).sum() + 1
+            dist = matrix[h_map[h_id], y_map[m_id]]  #distance in the matrix
+            rank = (matrix[h_map[h_id], :] < dist).sum() + 1 #look up the rank of said distance across all the distances possible
             K = inv_h[h_id] 
             
-            res = (rank, K, h_id, m_id)
-            raw_results['All'].append(res)
+            res = (rank, K, h_id, m_id)  #store information about every pair
+            raw_results['All'].append(res) #contain every pair information just in case lol
             
-            if inv_h[h_id] == 1 and inv_m[m_id] == 1:
+            if inv_h[h_id] == 1 and inv_m[m_id] == 1:  #count the nb of occurences of each protein ID in the ortholog pair list from orthoinspector
                 raw_results['OtO'].append(res)
             elif inv_h[h_id] > 1 and inv_m[m_id] == 1:
                 raw_results['OtM'].append(res)
@@ -187,10 +86,10 @@ def get_orthology_results(matrix, h_map, y_map, paires, inv_h, inv_m):
 
     stats = {}
     
-    for cat, r_list in raw_results.items():
+    for cat, r_list in raw_results.items():  #calculate median and average for each
         if len(r_list) > 0:
-            ranks_only = [r[0] for r in r_list]
-            stats[cat] = (np.mean(ranks_only), np.median(ranks_only))
+            ranks_only = [r[0] for r in r_list]  #take the ranks out of the tuples 
+            stats[cat] = (np.mean(ranks_only), np.median(ranks_only)) #calculate the mean and median of the ranks per category
         else:
             stats[cat] = (0.0, 0.0)
     
@@ -198,29 +97,9 @@ def get_orthology_results(matrix, h_map, y_map, paires, inv_h, inv_m):
 
 
 
-def get_failures_ids(raw_data):
-    failure_lists = {
-        'OtO_human_fail': set(), 'OtO_mouse_fail': set(),
-        'MtO_human_fail': set(), 'MtO_mouse_fail': set(),
-        'OtM_human_fail': set(), 'OtM_mouse_fail': set(),
-        'MtM_human_fail': set(), 'MtM_mouse_fail': set()
-    }
-    
-    categories = ['OtO', 'MtO', 'OtM', 'MtM']
-    
-    for cat in categories:
-        for rank, K, h_id, m_id in raw_data[cat]:
-            if cat in ['OtO', 'MtO']:
-                failed = (rank > 1)
-            else:
-                failed = (rank > K)
-            
-            if failed:
-                failure_lists[f"{cat}_human_fail"].add(h_id)
-                failure_lists[f"{cat}_mouse_fail"].add(m_id)
-    return {k: sorted(list(v)) for k, v in failure_lists.items()}
 
-def save_raw_to_tsv(raw_results, model_name, out_dir):
+
+def save_raw_to_tsv(raw_results, model_name, out_dir):  #to save my results as tsv, contains : category, protID 1 & 2, ranking, and nb of orthologs
     output_path = os.path.join(out_dir, f"{model_name}_full_results.tsv")
     with open(output_path, 'w', newline='') as f:
         writer = csv.writer(f, delimiter='\t')
@@ -230,12 +109,9 @@ def save_raw_to_tsv(raw_results, model_name, out_dir):
             for rank, K, h_id, m_id in pairs:
                 writer.writerow([cat, h_id, m_id, rank, K])
 
-def save_fails_to_txt(fail_dict, model_name, out_dir):
-    for list_name, ids in fail_dict.items():
-        with open(os.path.join(out_dir, f"{model_name}_{list_name}.txt"), 'w') as f:
-            f.write("\n".join(ids))
 
-def print_fixed_thresholds(list_models, category, out_file=None):
+
+def print_fixed_thresholds(list_models, category, out_file=None): #for oto and mto, check if the orthologs are in the top 1/5/10/100
     """Prints Top 1, 5, 10, and 100 percentages for absolute ranks."""
     print(f"\n{'MODÈLE':<9} | {'TOP 1':>10} | {'TOP 5':>10} | {'TOP 10':>10} | {'TOP 100':>10}", file=out_file)
     print("-" * 65, file=out_file)
@@ -253,10 +129,10 @@ def print_fixed_thresholds(list_models, category, out_file=None):
         top10 = (data <= 10).mean() * 100
         top100 = (data <= 100).mean() * 100
         
-        print(f"{name:<9} | {top1:>9.2f}% | {top5:>9.2f}% | {top10:>9.2f}% | {top100:>9.2f}%", file=out_file)
+        print(f"{name:<9} | {top1:>9.2f}% | {top5:>9.2f}% | {top10:>9.2f}% | {top100:>9.2f}%", file=out_file) #print bc i use it in a file after
 
 
-def print_relative_thresholds(list_models, category, threshold, out_file=None):
+def print_relative_thresholds(list_models, category, threshold, out_file=None): #for mtm and otm, check if the orthologs distance are in the top k/k+10/1% and top 100
     """Prints Top K, K+10, Threshold, and 100 percentages for dynamic ranks."""
     print(f"\n{'MODÈLE':<12} | {'TOP K':>9} | {'TOP K+10':>11} | {'TOP THRESH':>11} | {'TOP 100':>11}", file=out_file)
     print("-" * 65, file=out_file)
@@ -284,12 +160,33 @@ def print_relative_thresholds(list_models, category, threshold, out_file=None):
         percent_thresh = (count_threshold / total) * 100
         percent100 = (count_top100 / total) * 100
 
-        print(f"{name:<12} | {percentk:>9.2f}% | {percentk10:>11.2f}% | {percent_thresh:>11.2f}% | {percent100:>11.2f}%", file=out_file)
+        print(f"{name:<12} | {percentk:>9.2f}% | {percentk10:>11.2f}% | {percent100:>11.2f}% | {percent_thresh:>11.2f}%", file=out_file)            
+
+def get_failures_ids(raw_data, name1, name2):  
+    failure_lists = {}
+    categories = ['OtO', 'MtO', 'OtM', 'MtM']
+
+    for cat in categories:
+        failure_lists[f"{cat}_{name1}_fail"] = set()
+        failure_lists[f"{cat}_{name2}_fail"] = set()
+    
+    for cat in categories:
+        for rank, K, id1, id2 in raw_data[cat]:
+            if cat in ['OtO', 'MtO']:
+                failed = (rank > 1)
+            else:
+                failed = (rank > K)
             
+            if failed:
+                failure_lists[f"{cat}_{name1}_fail"].add(id1)
+                failure_lists[f"{cat}_{name2}_fail"].add(id2)
+                
+    return {k: sorted(list(v)) for k, v in failure_lists.items()}
 
-
-
-
+def save_fails_to_txt(fail_dict, model_name, out_dir):  #saves the protein ID of the ones that are out of the top yk what i mean save those id to a txt file 
+    for list_name, ids in fail_dict.items():
+        with open(os.path.join(out_dir, f"{model_name}_{list_name}.txt"), 'w') as f:
+            f.write("\n".join(ids))
 
 if __name__ == '__main__': 
 
@@ -314,7 +211,10 @@ if __name__ == '__main__':
     
     os.makedirs(args.out_dir, exist_ok=True)
     
-    # put the args in list to make it easier 
+  
+
+
+    # put the args in list to make it easier to use below
     models_tasks = []
     if args.t5_1 and args.t5_2: 
         models_tasks.append(("ProtT5", args.t5_1, args.t5_2))
@@ -323,9 +223,13 @@ if __name__ == '__main__':
     if args.esm600_1 and args.esm600_2:
         models_tasks.append(("ESM600M", args.esm600_1, args.esm600_2))
 
-    # load orthology tsv files
+    label1 = extractname_frompath(models_tasks[0][1])
+    label2 = extractname_frompath(models_tasks[0][2])
+
+    # load orthology tsv files to get the info needed 
     paires_temp = []
     inv_org1, inv_org2 = {}, {}
+
     with open(args.ortho, 'r') as f:
         for line in f:
             parts = line.strip().split()
@@ -337,12 +241,12 @@ if __name__ == '__main__':
 
     all_raw_results = []
     all_stats_results = []
-    stats_comparison_results = []
+    stats_comparison_results = []  #get some variables set up
     total_prots_target = 0
 
-    # process embed
-    for model_label, path1, path2 in models_tasks:  
-        print(f"\n--- Processing {model_label} ---")
+    # process embeddings to get the matrix calculation going
+    for model_label, path1, path2 in models_tasks:  #loop for 3 models used
+        print(f"\n--- Processing {model_label} ---") 
         
         id1, emb1 = embedding_setup(path1)
         id2, emb2 = embedding_setup(path2)
@@ -363,15 +267,13 @@ if __name__ == '__main__':
         all_stats_results.append((model_label, stats))
         
         # test stats
-        valid_pairs = [(h, m) for h, m in paires_temp if h in m1 and m in m2]
-        ortho_dist = [dist_matrix[m1[h], m2[m]] for h, m in valid_pairs] 
+        valid_pairs = [(h, m) for h, m in paires_temp if h in m1 and m in m2] #make sure everything is in the orthology list and in the matrix
+        ortho_dist = [dist_matrix[m1[h], m2[m]] for h, m in valid_pairs] #get the distance between orthologs
 
-        # We sample 1,000 valid pairs to build the non-ortho background.
-        # 1,000 pairs * 20,000 proteins = 20 million points (plenty for stats!)
-        import random
-        sample_pairs = random.sample(valid_pairs, min(1000, len(valid_pairs)))
+ 
+        sample_pairs = random.sample(valid_pairs, min(1000, len(valid_pairs))) #get a random sample bc it was way to heavy to do it for all
 
-        h_nonortho_dist = [dist_matrix[m1[h], j] 
+        h_nonortho_dist = [dist_matrix[m1[h], j] #get some distance for non ortho for the stat test, 
                         for h, m in sample_pairs 
                         for j in range(dist_matrix.shape[1]) 
                         if j != m2[m]]
@@ -391,20 +293,20 @@ if __name__ == '__main__':
             'ortho': ortho_dist,
             'h_nonortho': h_nonortho_dist,
             'm_nonortho': m_nonortho_dist,
-        })
-
+        }) #get the results in a df 
+ 
         save_raw_to_tsv(raw, model_label, args.out_dir)
-        save_fails_to_txt(get_failures_ids(raw), model_label, args.out_dir)
+        save_fails_to_txt(get_failures_ids(raw, label1, label2), model_label, args.out_dir)  #save everyone)
         
-        # Cleanup memory immediately apparently thats gppd
-        del id1, emb1, id2, emb2, emb1_n, emb2_n, dist_matrix
+        # Cleanup memory immediately apparently thats gppd 
+        del id1, emb1, id2, emb2, emb1_n, emb2_n, dist_matrix  #
         gc.collect()
 
     # make a summary file
-    one_percent_thresh = total_prots_target * 0.01
-    summary_path = os.path.join(args.out_dir, "comparison_summary.txt")
+    one_percent_thresh = total_prots_target * 0.01  #set the threshold for the 1% ranking of the top for otm and mtm 
+    summary_path = os.path.join(args.out_dir, "comparison_summary.txt") #
 
-    with open(summary_path, 'w') as f:
+    with open(summary_path, 'w') as f:  #create a file with a lot of summarized info like the top %, avg and median, stat test....
         print("=== ANALYSIS COMPARISON SUMMARY ===", file=f)
         print(f"Target Database Size: {total_prots_target}", file=f)
         print(f"1% Threshold Rank: {one_percent_thresh:.2f}\n", file=f)
@@ -437,39 +339,58 @@ if __name__ == '__main__':
             print("-" * len(header), file=f)
         
         print("\n=== MANN-WHITNEY U TEST (Non-Ortho > Ortho) ===", file=f)
-        print(f"{'Model':<12} | {'P-Value Org1':<14} | {'Sig Org1':<10} | {'P-Value Org2':<14} | {'Sig Org2':<10}", file=f)
+        print(f"{'Model':<12} | {f'P-Value {label1}':<14} | {'Sig':<10} | {f'P-Value {label2}':<14} | {'Sig':<10}", file=f)
         print("-" * 65, file=f)
         for res in stats_comparison_results:
             print(f"{res['label']:<12} | {res['p_h']:<14.2e} | {res['significant_h']:<10} | {res['p_m']:<14.2e} | {res['significant_m']:<10}", file=f)
 
-    nb_bins = np.linspace(0, 1, 50)    
-    fig1, axes1 = plt.subplots(2, len(stats_comparison_results),
-                            figsize=(6 * len(stats_comparison_results), 8),
-                            squeeze=False)
+    # 1. Distance Distributions (The Yellow/Green Notebook Style)
+    nb_bins = np.linspace(0, 1, 101)    
+    n_models = len(stats_comparison_results)
+    
+    fig1, axes1 = plt.subplots(2, n_models, 
+                               figsize=(6 * n_models, 10), 
+                               squeeze=False)
 
     for i, res in enumerate(stats_comparison_results):
-        for row, (nonortho_key, org_label, p_key) in enumerate([
-            ('h_nonortho', 'Org1', 'p_h'),
-            ('m_nonortho', 'Org2', 'p_m'),
-        ]):
+        # Row 0: Blue/Salmon | Row 1: Green/Gold
+        row_configs = [
+            {'ortho_k': 'ortho', 'non_k': 'h_nonortho', 'c': ("skyblue", "salmon"), 'lab': f"Humain vs Proteome {label2}"},
+            {'ortho_k': 'ortho', 'non_k': 'm_nonortho', 'c': ("limegreen", "gold"), 'lab': f"{label2} vs Proteome Humain"}
+        ]
+        
+        for row, cfg in enumerate(row_configs):
             ax = axes1[row, i]
-            ax.hist(res['ortho'],      bins=nb_bins, alpha=0.6, label="Ortho",     color="skyblue", density=True)
-            ax.hist(res[nonortho_key], bins=nb_bins, alpha=0.6, label="Non-Ortho", color="salmon",  density=True)
-            ax.set_title(f"{res['label']} — {org_label}\np = {res[p_key]:.2e}")
-            ax.set_xlabel("Cosine distance")
+            
+            ortho_data = res[cfg['ortho_k']]
+            non_ortho_data = res[cfg['non_k']]
+
+            ortho_hist, _ = np.histogram(ortho_data, bins=nb_bins, density=True)
+            nonortho_hist, _ = np.histogram(non_ortho_data, bins=nb_bins, density=True)
+            
+            ax.bar(nb_bins[:-1], ortho_hist, width=np.diff(nb_bins), alpha=0.5, 
+                   label=f"Ortho (µ={np.mean(ortho_data):.3f})", color=cfg['c'][0], edgecolor="none", align="edge")
+            
+            ax.bar(nb_bins[:-1], nonortho_hist, width=np.diff(nb_bins), alpha=0.5, 
+                   label=f"Non-Ortho (µ={np.mean(non_ortho_data):.3f})", color=cfg['c'][1], edgecolor="none", align="edge")
+            
+            ax.set_title(f"{res['label']}\n{cfg['lab']}", fontsize=13)
+            ax.set_xlabel("Cosine Distance")
             ax.set_ylabel("Density")
-            ax.legend()
+            ax.legend(loc='upper left', frameon=False)
 
-    plt.suptitle("Cosine distance distributions: orthologs vs non-orthologs")
+    plt.suptitle("Cosine distance distributions: orthologs vs non-orthologs", fontsize=16, y=1.02)
     plt.tight_layout()
-    plt.savefig(os.path.join(args.out_dir, "distance_distributions.png"), dpi=150)
-    plt.close(fig1)
+    plt.savefig(os.path.join(args.out_dir, "distance_distributions.png"), dpi=200, bbox_inches='tight')
+    plt.close(fig1) # Crucial: frees up memory on the cluster
 
+    # 2. Rank Distributions (Log Scale)
     categories = ['OtO', 'OtM', 'MtO', 'MtM']
-    n_models   = len(all_raw_results)
-    n_cats     = len(categories)
-
-    fig2, axes2 = plt.subplots(n_models, n_cats,figsize=(5 * n_cats, 4 * n_models),squeeze=False)
+    n_raw = len(all_raw_results)
+    
+    fig2, axes2 = plt.subplots(n_raw, len(categories), 
+                               figsize=(5 * len(categories), 4 * n_raw), 
+                               squeeze=False)
 
     for row, (model_label, raw) in enumerate(all_raw_results):
         for col, cat in enumerate(categories):
@@ -481,18 +402,20 @@ if __name__ == '__main__':
                 continue
 
             ranks = np.array([r[0] for r in pairs])
-            ax.hist(ranks, bins=40, color="steelblue", edgecolor="white", linewidth=0.4)
-            ax.axvline(np.median(ranks), color="crimson",  linestyle="--",
-                    linewidth=1.2, label=f"Median = {np.median(ranks):.0f}")
-            ax.axvline(np.mean(ranks),   color="darkorange", linestyle=":",
-                    linewidth=1.2, label=f"Mean = {np.mean(ranks):.0f}")
+            # Log bins to handle the long tail of ranks
+            bins = np.logspace(np.log10(1), np.log10(max(ranks.max(), 10)), 40)
+
+            ax.hist(ranks, bins=bins, color="skyblue", edgecolor="white", linewidth=0.4)
+            ax.set_xscale('log')
+            ax.axvline(np.median(ranks), color="crimson", linestyle="--",
+                       linewidth=1.2, label=f"Med = {np.median(ranks):.0f}")
             ax.set_title(f"{model_label} — {cat}", fontsize=10)
-            ax.set_xlabel("Rank")
+            ax.set_xlabel("Rank (Log Scale)")
             ax.set_ylabel("Count")
             ax.legend(fontsize=7)
 
-    plt.suptitle("Rank distributions by model and orthology type", y=1.01)
     plt.tight_layout()
-    plt.savefig(os.path.join(args.out_dir, "rank_distributions.png"),
-                dpi=150, bbox_inches="tight")
+    plt.savefig(os.path.join(args.out_dir, "rank_distributions_log.png"), dpi=200)
     plt.close(fig2)
+
+    print(f"\n[DONE] All results saved in: {args.out_dir}")
