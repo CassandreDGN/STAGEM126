@@ -23,8 +23,8 @@ stats = {
 obo_fname = download_go_basic_obo()
 godag = GODag(obo_fname)
 
-input_path = "/home/cassandre/stage/Cassandre/ortho/comparison_results"
-output_path = "/home/cassandre/stage/Cassandre/ortho/GO_analysis_output"
+input_path = "/home/cassandre/stage/Cassandre/results/ortho"
+output_path = "/home/cassandre/stage/Cassandre/results/ortho/GO_analysis_rank100"
 
 #put gaf files in a dictionnary to make it easier to loop on
 gaf_files = { 'mouse': '/home/cassandre/stage/Cassandre/Code/PHASE_2/goatoolsfiles/goa_mouse.gaf',
@@ -52,81 +52,66 @@ background_dict = {}  #make a dictionnary out of the background file cause i hav
 
 bg_search = os.path.join(input_path, "**/background_*.txt")
 
-for bg_path in glob.glob(bg_search, recursive=True): #for each background file, i get the name, the pair it belongs too and mix both so i know who is who
+for bg_path in glob.glob(bg_search, recursive=True):
 	file_name = os.path.basename(bg_path).lower() 
-	pair_folder = os.path.basename(os.path.dirname(os.path.dirname(bg_path)))
-	unique_key = f"{pair_folder}_{file_name}"
-
+	
+	# We need the model and ortho type from the background filename too
+	# background_human_m_esm300m_mtm.txt
+	parts = file_name.replace(".txt", "").split("_")
+	# parts will be ['background', 'human', 'm', 'esm300m', 'mtm']
+	
+	bg_org = parts[1] # human
+	bg_model = parts[3] # esm300m
+	bg_ortho = parts[4] # mtm
+	
+	# Create a specific key: "human_esm300m_mtm"
+	unique_key = f"{bg_org}_{bg_model}_{bg_ortho}"
+	
 	with open(bg_path, 'r') as f: 
-			background_dict[unique_key] = [line.strip().split(':')[-1].upper() for line in f if line.strip()] #make the id all pretty 
+		background_dict[unique_key] = [line.strip().split(':')[-1].upper() for line in f if line.strip()]
 
 
 master_results = []
 
-search_motif = os.path.join(input_path, "**/*_fail.txt") #grab all my failures text file
+search_motif = os.path.join(input_path, "rank100/human_droso/*fail*.txt")
 
-for file_path in glob.glob(search_motif, recursive=True): #for each of my failures i again get the name and infos i'll probably need
+for file_path in glob.glob(search_motif, recursive=True):
 	stats['total_files_processed'] += 1
 	file_name = os.path.basename(file_path)
-	parts = file_name.replace("_fail.txt", "").split("_")
-	model,ortho,organism = parts[0], parts[1],parts[2].lower()
-
-	pairs_folder = os.path.basename(os.path.dirname(file_path)) #again figure out which pair it belongs too
-
-	current_assoc = gaf_association.get(organism) #get the gaf assoc of the organism we're working on
-
-	search_org = organism #cause im not smart and used different names on different files
-	if organism == "homosapiens":
-		search_org = "human"
-	if organism == "zebrafish" : search_org = "fish" 
 	
-	# associate file to background
+	# 1. Parse filename (e.g., ESM300M_MtM_homosapiens_fail_top100.txt)
+	parts = file_name.split("_")
+	model, ortho, organism = parts[0], parts[1], parts[2].lower()
+	pairs_folder = os.path.basename(os.path.dirname(file_path))
+
+	# 2. Standardize names for mapping
+	org_name = "human" if "homo" in organism else "mouse" if "mus" in organism else organism
+	target_bg_key = f"{org_name}_{model.lower()}_{ortho.lower()}"
+
+	# 3. Get GAF and Background
+	current_assoc = gaf_association.get(org_name)
 	current_bg = None
-	target_model, target_ortho = model.lower(), ortho.lower()
-	
-
-	search_org = "human" if organism == "homosapiens" else "fish" if organism == "zebrafish" else organism
-	
-	for bg_key, bg_list in background_dict.items():  
-		bg_k = bg_key.lower() #key is the name of the file kinda + the pair 
-		
-		#take out the background and pair folder name
-		bg_filename_part = bg_k.split("background_")[-1]
-
-		cond_folder = pairs_folder.lower() in bg_k #make the conditions for the bg to be the right now
-		cond_model = target_model in bg_k
-		cond_ortho = target_ortho in bg_k
-		
-		#bg start by the organism they are made for so look them up
-		name_for_bg = "human" if organism == "homosapiens" else "fish" if organism == "zebrafish" else organism
-		cond_org = bg_filename_part.startswith(f"{name_for_bg}_") 
-		
-		if cond_folder and cond_model and cond_ortho and cond_org:  #if we fill all conditions the bg must be the right now 
-			current_bg = set(bg_list) 
-			break
+	if target_bg_key in background_dict:
+		current_bg = set(background_dict[target_bg_key])
 			
-	if current_bg is None:
+	if current_bg is None or current_assoc is None:
 		stats['skip_missing_data'] += 1
 		continue 
 
-	# get the id of the file we're working on
+	# 4. Get the study IDs from the fail file
 	with open(file_path, 'r') as f:
 		study_ids = [line.strip().split(':')[-1].replace('\r', '').strip().upper() for line in f if line.strip()] 
 
-	# check if the ids are in the background 
+	# 5. Filter IDs against background 
 	study_ids_filtered = [sid for sid in study_ids if sid in current_bg]
 
 	if not study_ids_filtered:
 		stats['skip_no_genes_in_bg'] += 1
 		continue
 		
-	if current_bg and current_assoc: #again, needed a safety cause i had trouble pairing the file and background
-		print(f"DEBUG BG - 3 premiers IDs du background: {list(current_bg)[:3]}")
-		
-		assoc_keys = list(current_assoc.get('BP', {}).keys())
-		print(f"DEBUG ASSOC - 3 premières clés de l'association: {assoc_keys[:3]}")
+	print(f"Processing: {file_name} | BG size: {len(current_bg)} | Study size: {len(study_ids_filtered)}")
 
-	#create the actual study using bg and file 
+	# 6. Run Study
 	goeaobj = GOEnrichmentStudyNS(
 		current_bg, 
 		current_assoc, 
@@ -135,11 +120,9 @@ for file_path in glob.glob(search_motif, recursive=True): #for each of my failur
 		methods = ['fdr_bh']
 		)
 
-	results_all = goeaobj.run_study(study_ids_filtered) #get all the info
-
-
+	results_all = goeaobj.run_study(study_ids_filtered)
 	if results_all: #if it works, w
-		perorganism_output = os.path.join(output_path, f"{pairs_folder}_{model}_{ortho}_{organism}_GO.csv")
+		perorganism_output = os.path.join(output_path, f"{pairs_folder}_{model}_{ortho}_{organism}_TOP100_GO.csv")		
 		current_file_result = []
 		
 		for results in results_all:  #get all the info we need, had to calculate some ratios
